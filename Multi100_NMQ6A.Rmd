@@ -1,0 +1,114 @@
+---
+title: "Mutlti100_NMQ6A"
+output: html_notebook
+---
+
+# Load packages
+
+```{r}
+library(haven)
+library(performance)
+library(ggeffects)
+library(dplyr)
+library(broom)
+```
+
+# Import data and scale predictors
+
+```{r}
+df <- read_sav("input/Zunick_GranadosSamayoa_Fazio_JESP2017_WorkingData.sav")
+df$WBz <- scale(df$bf_wb)
+df$bscsZ <- scale(df$bscsmean)
+```
+
+# Inspect distribution
+
+Count data, appears to be 1 or 0 inflated
+
+```{r}
+hist(df$unsolvpass3m)
+```
+
+# Linear regression violates assumptions
+
+DV is count data so linear regression violates assumptions.
+
+```{r}
+modelMain.l <- lm(unsolvpass3m ~ WBz,
+              data=df)
+check_model(modelMain.l)
+```
+
+# Poisson Generalized Linear Model
+
+Count data. Test main effect of weighting bias on unsolvable passes. Nonsignificant effect.
+
+```{r}
+modelMain.p <- glm(unsolvpass3m ~ WBz,
+              data=df,
+              family="poisson")
+summary(modelMain.p)
+confint(modelMain.p)
+```
+
+## Check assumptions for Poisson regression
+
+Poisson is underfitting 0s. There is overdispersion for Poisson as well.
+
+```{r}
+check_zeroinflation(modelMain.p)
+check_overdispersion(modelMain.p)
+check_model(modelMain.p)
+```
+
+# Negative Binomial
+
+Negative binomial for count data given Poisson underfit 0s and had overdispersion.
+
+Nonsignificant main effect.
+
+```{r}
+modelMain.nb <- glm.nb(unsolvpass3m ~ WBz,
+              data=df)
+summary(modelMain.nb)
+confint(modelMain.nb)
+```
+
+## Odds Ratio
+
+```{r}
+tidy(modelMain.nb,conf.int=TRUE,exponentiate=TRUE)
+```
+
+## Check assumptions
+
+No more overdispersion with negative binomial. There is now overfitting of 0s rather than underfitting but it's pretty nominal and less overfitting than the underfitting that was observed for Poisson.
+
+```{r}
+check_model(modelMain.nb)
+check_overdispersion(modelMain.nb)
+check_zeroinflation(modelMain.nb)
+```
+# Interaction between weighting bias and self-control
+
+Weighting bias positively predicts unsolvable passes/giving up for those low in self-control (-1SD). Negative association for those high in self-control (+1SD).
+
+```{r}
+modelBSCS.nb <- glm.nb(unsolvpass3m ~ as.numeric(WBz)*as.numeric(bscsZ),
+              data=df)
+summary(modelBSCS.nb)
+confint(modelBSCS.nb)
+ggpredict(modelBSCS.nb, c("WBz","bscsZ")) %>% plot()
+```
+
+## Odds Ratio
+
+```{r}
+tidy(modelBSCS.nb,conf.int=TRUE,exponentiate=TRUE)
+```
+
+
+# Conclusion
+
+The claim was supported.
+
